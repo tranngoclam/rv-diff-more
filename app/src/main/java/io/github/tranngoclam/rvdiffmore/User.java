@@ -5,6 +5,8 @@ import com.google.gson.annotations.SerializedName;
 
 import java.util.Locale;
 
+import androidx.annotation.Nullable;
+
 public class User {
 
   @Expose @SerializedName("gender") private String gender;
@@ -51,6 +53,7 @@ public class User {
     return gender;
   }
 
+  @Nullable
   public Id getId() {
     return id;
   }

@@ -10,11 +10,12 @@ import javax.inject.Inject;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.util.Pair;
+import androidx.databinding.DataBindingUtil;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import io.github.tranngoclam.rvdiffmore.databinding.ActivityMainBinding;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.disposables.Disposable;
@@ -22,19 +23,17 @@ import io.reactivex.processors.PublishProcessor;
 
 public class MainActivity extends AppCompatActivity {
 
-  private static final int PER_PAGE = 10;
-
-  private static final String TAG = MainActivity.class.getSimpleName();
+  private static final int PER_PAGE = 20;
 
   private static final int VISIBLE_THRESHOLD = 1;
 
   @Inject UserService userService;
 
+  private ActivityMainBinding binding;
+
   private CompositeDisposable compositeDisposable = new CompositeDisposable();
 
   private int lastVisibleItem, totalItemCount;
-
-  private RecyclerView list;
 
   private boolean loading = false;
 
@@ -42,28 +41,23 @@ public class MainActivity extends AppCompatActivity {
 
   private PublishProcessor<Integer> pageSubject = PublishProcessor.create();
 
-  private SwipeRefreshLayout swipe;
-
   private UserAdapter userAdapter;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
+    binding = DataBindingUtil.setContentView(this, R.layout.activity_main);
 
     ((App) getApplication()).getAppComponent().inject(this);
 
     userAdapter = new UserAdapter(user -> Toast.makeText(this, user.getName().toString(), Toast.LENGTH_SHORT).show());
 
-    list = findViewById(R.id.list);
-    swipe = findViewById(R.id.swipe);
-
     LinearLayoutManager layoutManager = new LinearLayoutManager(this);
-    list.setHasFixedSize(true);
-    list.setLayoutManager(layoutManager);
-    list.setItemAnimator(new DefaultItemAnimator());
-    list.setAdapter(userAdapter);
-    list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+    binding.list.setHasFixedSize(true);
+    binding.list.setLayoutManager(layoutManager);
+    binding.list.setItemAnimator(new DefaultItemAnimator());
+    binding.list.setAdapter(userAdapter);
+    binding.list.addOnScrollListener(new RecyclerView.OnScrollListener() {
       @Override
       public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
         super.onScrolled(recyclerView, dx, dy);
@@ -78,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
       }
     });
 
-    swipe.setOnRefreshListener(() -> {
+    binding.swipe.setOnRefreshListener(() -> {
       if (loading) {
         return;
       }
@@ -100,12 +94,17 @@ public class MainActivity extends AppCompatActivity {
     pageId = 1;
     pageSubject = PublishProcessor.create();
 
-    Pair<List<User>, DiffUtil.DiffResult> initialPair = Pair.create(userAdapter.getUsers(), null);
+    Pair<List<User>, DiffUtil.DiffResult> initialPair = Pair.create(userAdapter.getItems(), null);
 
     Disposable disposable = pageSubject
         .onBackpressureDrop()
         .filter(integer -> !loading)
-        .doOnNext(integer -> loading = true)
+        .doOnNext(integer -> {
+          loading = true;
+          if (pageId > 1) {
+            binding.list.post(() -> userAdapter.showProgress());
+          }
+        })
         .concatMap(integer -> userService.getUsers(pageId, PER_PAGE))
         .map(Response::getData)
         .scan(initialPair, (pair, next) -> {
@@ -116,18 +115,22 @@ public class MainActivity extends AppCompatActivity {
         .observeOn(AndroidSchedulers.mainThread())
         .subscribe(pair -> {
           loading = false;
-          swipe.setRefreshing(false);
+          binding.swipe.setRefreshing(false);
+          userAdapter.hideProgress();
           userAdapter.accept(pair);
           if (pageId == 1) {
-            list.smoothScrollToPosition(0);
+            binding.list.smoothScrollToPosition(0);
           }
         }, throwable -> {
+          Ln.w(throwable);
           loading = false;
-          swipe.setRefreshing(false);
+          binding.swipe.setRefreshing(false);
+          userAdapter.hideProgress();
           Toast.makeText(this, throwable.getMessage(), Toast.LENGTH_SHORT).show();
         }, () -> {
           loading = false;
-          swipe.setRefreshing(false);
+          binding.swipe.setRefreshing(false);
+          userAdapter.hideProgress();
         });
 
     compositeDisposable.add(disposable);
